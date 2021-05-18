@@ -1,103 +1,123 @@
-#include "U8glib.h"
+#include <Wire.h>
 #include <Adafruit_BMP280.h>
-#include "Wire.h"
-#define P0 1021.97  //1013.25 
-Adafruit_BMP280 bmp(bmp);
+#include "U8glib.h"
 
-// OLED Type
-U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NO_ACK);
+Adafruit_BMP280 bmp;
 
-char sT[20];
-char sP[9];
-char sA[9];
-char sA_MIN[9];
-char sA_MAX[9];
-double A_MIN = 0;
-double A_MAX = 0;
+U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NO_ACK);  // Display which does not send AC
+//U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NONE|U8G_I2C_OPT_DEV_0);  // I2C / TWI
+//U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_DEV_0|U8G_I2C_OPT_NO_ACK|U8G_I2C_OPT_FAST); // Fast I2C / TWI
+//U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NO_ACK);  // Display which does not send AC
 
-void draw(double T, double P, double A) {
-  u8g.setFont(u8g_font_unifont);
+float pressure = 0.0;
+float tempC = 0.0;
+float altitude = 0.0;
+void BmpSensorRead(float* pressure, float* tempC, float* altitude);
+void DisplayPresTemp(float* pressure, float* tempC, float* altitude);
 
-  dtostrf(T, 4, 2, sT);
-  dtostrf(P, 4, 2, sP);
-  dtostrf(A, 4, 2, sA);
-
-  u8g.drawStr( 5, 10, "Temp: ");
-  u8g.drawStr( 5, 30, "Bar : ");
-  u8g.drawStr( 5, 50, "Alt : ");
-  u8g.drawStr( 50, 10, sT);
-  u8g.drawStr( 50, 30, sP);
-  u8g.drawStr( 50, 50, sA);
-}
-
-void draw2(double A_MIN, double A_MAX) {
-  u8g.setFont(u8g_font_unifont);
-
-  dtostrf(A_MIN, 4, 2, sA_MIN);
-  dtostrf(A_MAX, 4, 2, sA_MAX);
-  u8g.drawStr( 5, 20, "A Min: ");
-  u8g.drawStr( 60, 20, sA_MIN);
-  u8g.drawStr( 5, 45, "A Max: ");
-  u8g.drawStr( 60, 45, sA_MAX);
-}
-
-void setup() {
+void setup(void)
+{
   Serial.begin(9600);
-  if (!bmp.begin()) {
-    Serial.println("BMP init failed!");
-    while (1);
-  }
-  else Serial.println("BMP init success!");
 
-  u8g.setColorIndex(1);
-  u8g.setFont(u8g_font_unifont);
+  // assign default color value
+  if (u8g.getMode() == U8G_MODE_R3G3B2)
+  {
+    u8g.setColorIndex(255);     // white
+  }
+  else if (u8g.getMode() == U8G_MODE_GRAY2BIT)
+  {
+    u8g.setColorIndex(3);         // max intensity
+  }
+  else if (u8g.getMode() == U8G_MODE_BW)
+  {
+    u8g.setColorIndex(1);         // pixel on
+  }
+  else if (u8g.getMode() == U8G_MODE_HICOLOR)
+  {
+    u8g.setHiColorByRGB(255, 255, 255);
+  }
+
+  for (int a = 0; a < 30; a++)
+  {
+    u8g.firstPage();
+
+    do
+    {
+      u8g.setFont(u8g_font_fub11);
+      u8g.setFontRefHeightExtendedText();
+      u8g.setDefaultForegroundColor();
+      u8g.setFontPosTop();
+      u8g.drawStr(4, a, "BMP280 Sensor");
+    }
+    while (u8g.nextPage());
+  }
+
+  delay(3000);
+
+  if (!bmp.begin(0x76))
+  {
+    u8g.firstPage();
+
+    do
+    {
+      u8g.setFont(u8g_font_fub11);
+      u8g.setFontRefHeightExtendedText();
+      u8g.setDefaultForegroundColor();
+      u8g.setFontPosTop();
+      u8g.drawStr(4, 0, "BMP280 Sensor");
+      u8g.drawStr(4, 20, " ERROR!");
+    }
+    while (u8g.nextPage());
+
+    Serial.println("BMP280 sensor, ERROR!");
+
+    while (1) {}
+  }
 }
+void loop(void)
+{
+  BmpSensorRead(&pressure, &tempC, &altitude);
+  DisplayPresTemp(&pressure, &tempC, &altitude);
+  delay(1000);
+}
+void DisplayPresTemp(float* pressure, float* tempC, float* altitude)
+{
+  u8g.firstPage();
 
-void loop(void) {
-  double T, P;
-  char result = bmp.startMeasurment();
-
-  if (result != 0) {
-    delay(result);
-    result = bmp.getTemperatureAndPressure(T, P);
-
-    if (result != 0) {
-      double A = bmp.altitude(P, P0);
-
-      if ( A > A_MAX) {
-        A_MAX = A;
-      }
-
-      if ( A < A_MIN || A_MIN == 0) {
-        A_MIN = A;
-      }
-
-      //      Serial.print("T = \t"); Serial.print(T, 2); Serial.print(" degC\t");
-      //      Serial.print("P = \t"); Serial.print(P, 2); Serial.print(" mBar\t");
-      //      Serial.print("A = \t"); Serial.print(A, 2); Serial.println(" m");
-
-      u8g.firstPage();
-      do {
-        draw(T, P, A);
-      } while ( u8g.nextPage() );
-      u8g.firstPage();
-      delay(1000);
-
-      do {
-        draw2(A_MIN, A_MAX);
-      } while ( u8g.nextPage() );
-      u8g.firstPage();
-      delay(1000);
-      
-    }
-    else {
-      Serial.println("Error.");
-    }
+  do
+  {
+    u8g.setFont(u8g_font_fub11);
+    u8g.setFontRefHeightExtendedText();
+    u8g.setDefaultForegroundColor();
+    u8g.setFontPosTop();
+    u8g.drawStr(2, 0, "Pressure");
+    u8g.setPrintPos(75, 0);
+    u8g.print(*pressure);
+    u8g.drawStr(4, 20, "Temp C");
+    u8g.setPrintPos(75, 20);
+    u8g.print(*tempC);
+    u8g.drawStr(4, 40, "Altitude");
+    u8g.setPrintPos(75, 40);
+    u8g.print(*altitude);
   }
-  else {
-    Serial.println("Error.");
-  }
+  while (u8g.nextPage());
+}
+void BmpSensorRead(float* pressure, float* tempC, float* altitude)
+{
+  *tempC = bmp.readTemperature();
+  Serial.print("Temperature = ");
+  Serial.print(*tempC);
+  Serial.println(" *C");
 
-  delay(100);
+  *pressure = bmp.readPressure() / 100.0;
+  Serial.print("Pressure = ");
+  Serial.print(*pressure / 100.0);
+  Serial.println(" hPa");
 
+  // Calculate altitude assuming 'standard' barometric
+  // pressure of 1013.25 millibar = 101325 Pascal
+  *altitude = bmp.readAltitude();
+  Serial.print("Altitude = ");
+  Serial.print(*altitude);
+  Serial.println(" meters");
 }
